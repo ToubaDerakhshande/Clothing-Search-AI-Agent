@@ -38,7 +38,7 @@ Searching across online shopping aggregators often returns noisy, irrelevant res
 
 ## 🛠️ Prerequisites & Setup
 
-1. **Import Workflow:** Import the provided `smart-shop.json` file into your self-hosted or cloud n8n instance.
+1. **Import Workflow:** Import the provided `Clothing-search-ai-agent.json` file into your self-hosted or cloud n8n instance.
 2. **Review Node Parameters:** 
    - Check the `HTTP Request1` node URL and headers (`User-Agent`).
    - Inspect the `Code in JavaScript` node to customize filtering rules if needed.
