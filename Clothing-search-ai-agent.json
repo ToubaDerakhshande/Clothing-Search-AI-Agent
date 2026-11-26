@@ -1,0 +1,166 @@
+{
+  "name": "Clothing-search-ai-agent",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Product Features",
+        "formDescription": "مشخصات محصول مورد نظر خود را وارد کن",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "اسم پوشاک"
+            },
+            {
+              "fieldLabel": "رنگ پوشاک"
+            },
+            {
+              "fieldLabel": "نوع پوشاک",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "زنانه"
+                  },
+                  {
+                    "option": "مردانه"
+                  },
+                  {
+                    "option": "بچه گانه"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false,
+          "respondWithOptions": {
+            "values": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -160,
+        -80
+      ],
+      "id": "5ac2da8d-4068-45ce-a48c-79d793b9ee1e",
+      "name": "On form submission",
+      "webhookId": "d4790b6a-d981-4caf-bee2-8f015294bd25"
+    },
+    {
+      "parameters": {
+        "url": "https://api.torob.com/v4/base-product/search/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json['اسم پوشاک'] + ' ' + $json['رنگ پوشاک'] + ' ' + $json['نوع پوشاک'] }}\n"
+            },
+            {
+              "name": "size",
+              "value": "20"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        80,
+        -80
+      ],
+      "id": "ae6c1d01-bafe-4d5e-ba4d-be2f28be6776",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet products = [];\n\n// خواندن مستقیم مقادیر ورودی کاربر از نود فرم\nconst formData = $('On form submission').first()?.json || {};\nconst searchName = formData['اسم پوشاک'] || '';\nconst searchColor = formData['رنگ پوشاک'] || '';\nconst searchType = formData['نوع پوشاک'] || '';\n\n// تابع نرمال‌سازی متن برای یکسان‌سازی حروف فارسی (ک، ی، همزه و فاصله اضافی)\nfunction normalizeText(text) {\n  return String(text || '')\n    .trim()\n    .toLowerCase()\n    .replace(/[كك]/g, 'ک')\n    .replace(/[يئي]/g, 'ی')\n    .replace(/‌/g, ' ')\n    .replace(/\\s+/g, ' ');\n}\n\n// تفکیک کلمات اصلی جستجو (مثلا «سویشرت زنانه مشکی» به ['سویشرت', 'زنانه', 'مشکی'])\nconst rawSearchString = `${searchName} ${searchColor} ${searchType}`;\nconst searchWords = normalizeText(rawSearchString)\n  .split(' ')\n  .filter(w => w.length > 1); // کلمات کوتاه‌تر از ۲ حرف نادیده گرفته شوند\n\n// تابع سخت‌گیرانه تطبیق AND\nfunction matchesAllStrict(title) {\n  if (searchWords.length === 0) return true;\n  const normTitle = normalizeText(title);\n  \n  // تمام کلمات وارد شده توسط کاربر حتماً باید در عنوان محصول وجود داشته باشند\n  const hasAllWords = searchWords.every(word => normTitle.includes(word));\n  if (!hasAllWords) return false;\n\n  // اگر کاربر کلمه \"سویشرت\" را خواسته اما در عنوان کلمه \"هودی\" آمده باشد، آن را رد کن (جلوگیری از تداخل هودی و سویشرت)\n  if (searchWords.includes('سویشرت') && normTitle.includes('هودی') && !searchWords.includes('هودی')) {\n    return false;\n  }\n  // برعکس: اگر کاربر \"هودی\" خواسته اما محصول \"سویشرت\" است، رد کن\n  if (searchWords.includes('هودی') && normTitle.includes('سویشرت') && !searchWords.includes('سویشرت')) {\n    return false;\n  }\n\n  return true;\n}\n\n// تابع تبدیل قیمت به عدد خالص جهت مرتب‌سازی\nfunction toNumericPrice(value) {\n  if (typeof value === 'number' && Number.isFinite(value)) return value;\n  if (typeof value !== 'string') return null;\n\n  const normalized = value\n    .replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))\n    .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧۸۹'.indexOf(d)))\n    .replace(/[٬،,]/g, '');\n\n  const match = normalized.match(/\\d+(?:\\.\\d+)?/);\n  return match ? Number(match[0]) : null;\n}\n\n// تابع فرمت کردن قیمت به تومان\nfunction formatPrice(price) {\n  if (!price) return 'نامشخص';\n  return Number(price).toLocaleString('fa-IR') + ' تومان';\n}\n\nitems.forEach(item => {\n  const data = item.json;\n\n  // ۱. پردازش دیتای دیجی‌کالا\n  if (data?.data?.products && Array.isArray(data.data.products)) {\n    data.data.products.forEach(p => {\n      const title = p.title_fa || p.title;\n      \n      if (!matchesAllStrict(title)) return;\n\n      const priceVal = p.default_variant?.price?.selling_price ? Math.floor(p.default_variant.price.selling_price / 10) : null;\n      const link = `https://www.digikala.com/product/dkp-${p.id}/`;\n      \n      products.push({\n        source: 'دیجی‌کالا',\n        title: title,\n        price: formatPrice(priceVal),\n        link: link,\n        sortPrice: priceVal\n      });\n    });\n  }\n\n  // ۲. پردازش دیتای ترب\n  if (data?.results && Array.isArray(data.results)) {\n    data.results.forEach(p => {\n      const title = p.name1 || p.name2 || p.title;\n      \n      if (!matchesAllStrict(title)) return;\n\n      const priceVal = p.price || p.price_text;\n      const numericPrice = toNumericPrice(p.price) ?? toNumericPrice(p.price_text);\n      const link = p.web_client_absolute_url ? `https://torob.com${p.web_client_absolute_url}` : (p.more_info_url || 'https://torob.com');\n\n      products.push({\n        source: 'ترب',\n        title: title,\n        price: typeof priceVal === 'number' ? formatPrice(priceVal) : (priceVal || 'استعلام در سایت'),\n        link: link,\n        sortPrice: numericPrice\n      });\n    });\n  }\n});\n\n// حذف محصولات تکراری بر اساس عنوان\nconst uniqueProducts = Array.from(\n  new Map(products.map(p => [p.title, p])).values()\n);\n\n// مرتب‌سازی از ارزان‌ترین به گران‌ترین\nuniqueProducts.sort((a, b) => {\n  if (a.sortPrice == null && b.sortPrice == null) return 0;\n  if (a.sortPrice == null) return 1;\n  if (b.sortPrice == null) return -1;\n  return a.sortPrice - b.sortPrice;\n});\n\n// ساخت جدول HTML خروجی\nlet outputHtml = '';\n\nif (uniqueProducts.length === 0) {\n  outputHtml = `\n    <div style=\"direction: rtl; font-family: Tahoma, sans-serif; text-align: center; padding: 25px; color: #721c24; background-color: #f8d7da; border-radius: 8px;\">\n      محصولی با تطابق ۱۰۰٪ با کلمات جستجوی شما یافت نشد. لطفاً کلیدواژه‌های ساده‌تر یا عمومی‌تر وارد کنید.\n    </div>\n  `;\n} else {\n  outputHtml = `\n    <div style=\"direction: rtl; font-family: Tahoma, sans-serif; text-align: right; margin: 10px 0;\">\n      <h3 style=\"color: #1a202c; border-bottom: 2px solid #3182ce; padding-bottom: 8px; margin-bottom: 15px;\">\n        🛍️ نتایج جستجوی دقیق و فیلترشده (مرتب‌شده از ارزان‌ترین):\n      </h3>\n      <table style=\"width: 100%; border-collapse: collapse; font-size: 13px; text-align: right; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">\n        <thead>\n          <tr style=\"background-color: #f7fafc; color: #4a5568; border-bottom: 2px solid #e2e8f0;\">\n            <th style=\"padding: 10px; width: 15%;\">منبع</th>\n            <th style=\"padding: 10px; width: 50%;\">نام محصول</th>\n            <th style=\"padding: 10px; width: 20%;\">قیمت</th>\n            <th style=\"padding: 10px; width: 15%; text-align: center;\">عملیات</th>\n          </tr>\n        </thead>\n        <tbody>\n  `;\n\n  uniqueProducts.slice(0, 10).forEach((prod, index) => {\n    const bgColor = index % 2 === 0 ? '#ffffff' : '#fcfcfc';\n    const badgeColor = prod.source === 'دیجی‌کالا' ? '#ef394e' : '#3182ce';\n\n    outputHtml += `\n      <tr style=\"background-color: ${bgColor}; border-bottom: 1px solid #edf2f7;\">\n        <td style=\"padding: 10px;\">\n          <span style=\"background-color: ${badgeColor}; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;\">\n            ${prod.source}\n          </span>\n        </td>\n        <td style=\"padding: 10px; font-weight: 500; color: #2d3748;\">\n          ${prod.title}\n        </td>\n        <td style=\"padding: 10px; color: #2b6cb0; font-weight: bold;\">\n          ${prod.price}\n        </td>\n        <td style=\"padding: 10px; text-align: center;\">\n          <a href=\"${prod.link}\" target=\"_blank\" style=\"background-color: #38a169; color: white; padding: 5px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block;\">\n            خرید محصول\n          </a>\n        </td>\n      </tr>\n    `;\n  });\n\n  outputHtml += `\n        </tbody>\n      </table>\n    </div>\n  `;\n}\n\nreturn [{\n  json: {\n    result: outputHtml\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        -80
+      ],
+      "id": "a2643913-fa09-405d-a34f-6ff41c2e584a",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "showText",
+        "responseText": "={{ $json.result }}"
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        -80
+      ],
+      "id": "53119fbb-a95a-42ea-8401-e98c4f080bda",
+      "name": "Form",
+      "webhookId": "1d67d58a-e3ba-4186-b0aa-34f75dd37adf"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6eb7fa34-9714-4c78-95c0-03949f24bbc1",
+  "meta": {
+    "instanceId": "3fade502b6432c160e2358e4da55bb2fc36ae3a63518bc137a36d4909f62913b"
+  },
+  "nodeGroups": [],
+  "id": "5Y2jT4sllwD1sdDj",
+  "tags": []
+}
